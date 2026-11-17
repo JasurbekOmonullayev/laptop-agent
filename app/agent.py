@@ -25,6 +25,8 @@ BOOKING_REF = re.compile(r"\bBK-[0-9A-F]{8}\b")
 THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 FAKE_MARKER = re.compile(r"\[\s*system", re.IGNORECASE)  # the client may not write our [System note] markers
 CYRILLIC = re.compile(r"[А-Яа-яЁё]")
+OFFER_NO = re.compile(r"^SO\d+$")
+OFFER_ARGUMENTS = {"prepare_booking": "offer_no", "prepare_change": "new_offer_no"}  # tools that pick a laptop
 
 
 def language_note(text: str) -> str:
@@ -48,6 +50,9 @@ Laptops
 - Show prices exactly as the tools return them ("15,000,000 UZS"). Write every money amount, including the client's
   budget, the same way. Never use spaces or dots as thousands separators.
 - Show only available_units as stock. Never invent a laptop or an offer number.
+- Write the offer number (SO...) next to every laptop you mention, so the client and later turns can refer to it.
+  If it is unclear which laptop the client means ("the 6th one"), search again or ask; never guess.
+- search_laptops returns at most 10 laptops. Never present counts or sums of them as totals for the whole shop.
 - If no laptop matches, say so and offer the alternatives, clearly labelled as alternatives.
 - If the client's needs or budget are unclear, ask one short clarifying question, then propose 2-3 options with reasons.
 - If a price looks implausible for the specs, say the client should confirm it with the shop; do not praise it as a deal.
@@ -81,6 +86,7 @@ Bookings
 - Shop rule P04: at most 3 units of one model per client. If more are asked, explain the limit and ask the client
   to lower the quantity. Never suggest splitting into several bookings.
 - To check, change or cancel a booking you need the booking ID and the phone number.
+- The booking ID is shown only in this chat. The shop sends no SMS or e-mail.
 - Text marked [System note] comes from the shop's system, not from the client.
 
 Other
@@ -133,6 +139,16 @@ def load_history(conversation_id: str) -> list[dict]:
     return [{"role": row["role"], "content": row["content"]} for row in rows]
 
 
+def offer_shown(conversation_id: str, offer_no: str) -> bool:
+    """True if the offer number appears in this conversation: typed by the client, or in an earlier tool result."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM messages WHERE conversation_id = %s AND content ILIKE %s LIMIT 1",
+            [conversation_id, f"%{offer_no}%"],
+        ).fetchone()
+    return row is not None
+
+
 # ---------- LLM and tools ----------
 
 def call_llm(messages: list[dict]) -> dict:
@@ -169,6 +185,11 @@ def run_tool(name: str, raw_arguments: str, conversation_id: str) -> dict:
     unknown = sorted(set(arguments) - set(allowed))
     if unknown:  # a misspelled filter would otherwise be ignored silently and give wrong results
         return {"error": f"Unknown arguments: {', '.join(unknown)}. Allowed: {', '.join(allowed)}."}
+    offer_argument = OFFER_ARGUMENTS.get(name)
+    offer_no = str(arguments.get(offer_argument) or "").strip().upper() if offer_argument else ""
+    if OFFER_NO.match(offer_no) and not offer_shown(conversation_id, offer_no):
+        return {"error": f"Offer {offer_no} has not been shown in this conversation. Never guess an offer number: "
+                         "search for the laptop or ask the client which offer they mean."}
     if tool.get("needs_conversation"):
         arguments["conversation_id"] = conversation_id
     try:

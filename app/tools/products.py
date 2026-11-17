@@ -166,7 +166,7 @@ TOOLS = {
         "function": get_laptop,
         "schema": {
             "name": "get_laptop",
-            "description": "Full details, price and available units of one laptop by its offer number (e.g. SO29592578).",
+            "description": "Full details, price and available units of one laptop by its offer number (SO followed by digits).",
             "parameters": {
                 "type": "object",
                 "properties": {"offer_no": {"type": "string"}},

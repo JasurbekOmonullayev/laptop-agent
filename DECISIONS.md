@@ -60,6 +60,8 @@ from a fixed list ("ha", "yes", "да", ...) runs `confirm_pending`. That functi
 LLM arguments, so exactly what the client saw is booked. It locks the laptop row (`SELECT ... FOR UPDATE`),
 checks stock, limit and price again, and writes the booking and its log in one transaction. Without the lock,
 30 parallel clients booked 29 units of a laptop that had 5; with it, exactly 5 (`tests/test_stock.py`).
+The LLM can only prepare a booking for an offer number that already appeared in the conversation (typed by the
+client or returned by a tool); a guessed number is refused in code.
 
 ## 6. How hallucination is prevented
 
